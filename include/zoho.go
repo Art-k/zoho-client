@@ -8,6 +8,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -24,6 +25,14 @@ type DBZohoCode struct {
 	Code string
 }
 
+type ZohoToken struct {
+	AccessToken  string `json:"access_token"`  //:"1000.2deaf8d0c268e3c85daa2a013a843b10.703adef2bb337b 8ca36cfc5d7b83cf24",
+	RefreshToken string `json:"refresh_token"` //:"1000.18e983526f0ca8575ea9c53b0cd5bb58.1bd83a6f2e22c3a7e1309d96ae439cc1",
+	ApiDomain    string `json:"api_domain"`    //:"https://api.zoho.com",
+	TokenType    string `json:"token_type"`    //:"Bearer",
+	ExpiresIn    int    `json:"expires_in"`    //:3600
+}
+
 func HandleHTTPFunction() {
 
 	r := mux.NewRouter()
@@ -32,6 +41,7 @@ func HandleHTTPFunction() {
 
 	//TODO this part should be finished
 	r.HandleFunc("/code", ZohoCodeProcessing)
+	r.HandleFunc("/token", GetZohoToken)
 	//r.HandleFunc("/get-avg-age", AvgLoopsForScreens)
 
 	fmt.Printf("Starting Server to HANDLE zoho.maxtv.tech back end\nPort : " + Port + "\nAPI revision " + Version + "\n\n")
@@ -39,6 +49,15 @@ func HandleHTTPFunction() {
 		Log.Fatal(err, "ERROR")
 	}
 
+}
+
+func GetZohoToken(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case "GET":
+		ZohoAuth()
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.WriteHeader(http.StatusOK)
+	}
 }
 
 func ZohoCodeProcessing(w http.ResponseWriter, r *http.Request) {
@@ -111,8 +130,39 @@ func ZohoAuth() {
 	//https://accounts.zoho.com/oauth/v2/auth
 	//	?response_type=code&
 	//		client_id=1000.GMB0YULZHJK411284S8I5GZ4CHUEX0&
-	//		scope=AaaServer.profile.Read&
+	//		scope=ZohoCampaigns.contact.ALL&
 	//		redirect_uri=https://www.zylker.com/oauthredirect&
 	//	prompt=consent
+
+	//https://accounts.zoho.com/oauth/v2/auth?client_id=1000.1KNSCLKQS192BLLGKR0BS1V452FQ5H&scope=ZohoCampaigns.campaign.ALL,Aaaserver.profile.Read,ZohoCampaigns.contact.ALL&redirect_uri=http://api.maxtvmedia.com/zoho/redirect.php&response_type=code
+
+	url := "https://accounts.zoho.com/oauth/v2/auth?response_type=code&client_id=" + os.Getenv("CLIENT_ID") + "&scope=ZohoCampaigns.contact.ALL&redirect_uri=https://zoho.maxtv.tech/code&prompt=consent"
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		Log.Error(err)
+	}
+
+	resp, err := Client.Do(req)
+	if err != nil {
+		Log.Error(err)
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		Log.Error(err)
+	}
+
+	var zohoToken ZohoToken
+	err = json.Unmarshal(body, &zohoToken)
+	if err != nil {
+		Log.Println(err)
+	}
+
+	Log.Info("AccessToken : ", zohoToken.AccessToken)
+	Log.Info("RefreshToken : ", zohoToken.RefreshToken)
+	Log.Info("ApiDomain : ", zohoToken.ApiDomain)
+	Log.Info("ExpiresIn : ", zohoToken.ExpiresIn)
+	Log.Info("TokenType : ", zohoToken.TokenType)
 
 }

@@ -71,6 +71,8 @@ func main() {
 
 	inc.HandleDatabase()
 
+	inc.ZohoAuth()
+
 	inc.HandleHTTPFunction()
 
 }
