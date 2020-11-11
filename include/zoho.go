@@ -76,6 +76,41 @@ func ZohoCodeProcessing(w http.ResponseWriter, r *http.Request) {
 			Code: code,
 		})
 
+		url := "https://accounts.zoho.com/oauth/v2/token?" +
+			"client_id=" + os.Getenv("CLIENT_ID") + "&" +
+			"grant_type=authorization_code&" +
+			"client_secret=" + os.Getenv("CLIENT_SECRET") + "&" +
+			"redirect_uri=https://zoho.maxtv.tech/code&" +
+			"code=" + code
+
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			Log.Error(err)
+		}
+
+		resp, err := Client.Do(req)
+		if err != nil {
+			Log.Error(err)
+		}
+		defer resp.Body.Close()
+
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			Log.Error(err)
+		}
+
+		var zohoToken ZohoToken
+		err = json.Unmarshal(body, &zohoToken)
+		if err != nil {
+			Log.Println(err)
+		}
+
+		Log.Info("AccessToken : ", zohoToken.AccessToken)
+		Log.Info("RefreshToken : ", zohoToken.RefreshToken)
+		Log.Info("ApiDomain : ", zohoToken.ApiDomain)
+		Log.Info("ExpiresIn : ", zohoToken.ExpiresIn)
+		Log.Info("TokenType : ", zohoToken.TokenType)
+
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.WriteHeader(http.StatusOK)
 
@@ -144,52 +179,23 @@ func ZohoAuth() {
 
 	url := "https://accounts.zoho.com/oauth/v2/auth?response_type=code&client_id=" + os.Getenv("CLIENT_ID") + "&scope=ZohoCampaigns.contact.ALL&redirect_uri=https://zoho.maxtv.tech/code&prompt=consent"
 	fmt.Println(url)
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		Log.Error(err)
-	}
 
-	resp, err := Client.Do(req)
-	if err != nil {
-		Log.Error(err)
-	}
-	defer resp.Body.Close()
+	//req, err := http.NewRequest("GET", url, nil)
+	//if err != nil {
+	//	Log.Error(err)
+	//}
+	//
+	//resp, err := Client.Do(req)
+	//if err != nil {
+	//	Log.Error(err)
+	//}
+	//defer resp.Body.Close()
 
-	time.Sleep(15 * time.Second)
+	//time.Sleep(15 * time.Second)
 
-	var code DBZohoCode
-	Db.Last(&code)
+	//var code DBZohoCode
+	//Db.Last(&code)
 
 	// ============================================================================
-
-	url = "https://accounts.zoho.com/oauth/v2/token?" +
-		"client_id=" + os.Getenv("CLIENT_ID") + "&" +
-		"grant_type=authorization_code&" +
-		"client_secret=" + os.Getenv("CLIENT_SECRET") + "&" +
-		"redirect_uri=https://zoho.maxtv.tech/code&" +
-		"code=" + code.Code
-
-	resp, err = Client.Do(req)
-	if err != nil {
-		Log.Error(err)
-	}
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		Log.Error(err)
-	}
-
-	var zohoToken ZohoToken
-	err = json.Unmarshal(body, &zohoToken)
-	if err != nil {
-		Log.Println(err)
-	}
-
-	Log.Info("AccessToken : ", zohoToken.AccessToken)
-	Log.Info("RefreshToken : ", zohoToken.RefreshToken)
-	Log.Info("ApiDomain : ", zohoToken.ApiDomain)
-	Log.Info("ExpiresIn : ", zohoToken.ExpiresIn)
-	Log.Info("TokenType : ", zohoToken.TokenType)
 
 }
