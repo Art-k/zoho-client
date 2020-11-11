@@ -48,6 +48,7 @@ func HandleHTTPFunction() {
 	//TODO this part should be finished
 	r.HandleFunc("/code", ZohoCodeProcessing)
 	r.HandleFunc("/token", GetZohoToken)
+	r.HandleFunc("/add-contact", AddZohoContact)
 	//r.HandleFunc("/get-avg-age", AvgLoopsForScreens)
 
 	fmt.Printf("Starting Server to HANDLE zoho.maxtv.tech back end\nPort : " + Port + "\nAPI revision " + Version + "\n\n")
@@ -57,14 +58,57 @@ func HandleHTTPFunction() {
 
 }
 
+func AddZohoContact(w http.ResponseWriter, r *http.Request) {
+
+	switch r.Method {
+	case "POST":
+
+		err := CheckForSavedTokens()
+		if err != nil {
+			err = RefreshTokenRequest()
+			if err != nil {
+
+			}
+		}
+
+	}
+
+}
+
+func ResponseOK(w http.ResponseWriter, addedRecordString []byte) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("content-type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	n, _ := fmt.Fprintf(w, string(addedRecordString))
+	log.Println("Response was sent ", n, " bytes")
+	return
+}
+
+func ResponseBadRequest(w http.ResponseWriter, err error, message string) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("content-type", "application/json")
+	errorString := "{\"error_message\":\"" + err.Error() + "\",\"message\":\"" + message + "\"}"
+	http.Error(w, errorString, http.StatusBadRequest)
+	return
+}
+
 func GetZohoToken(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
 
-		//ZohoAuth()
-		ZohoAuth2(r.URL.Query().Get("code"))
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.WriteHeader(http.StatusOK)
+		err := ZohoAuth2(r.URL.Query().Get("code"))
+		if err != nil {
+			ResponseBadRequest(w, err, "You need to Max Tv Dev Support !!!")
+		}
+
+		var token DBZohoToken
+		Db.Last(&token)
+		response, err := json.Marshal(&token)
+		if err != nil {
+			ResponseBadRequest(w, err, "We can't read Token")
+		}
+
+		ResponseOK(w, response)
 
 	}
 }
@@ -90,33 +134,6 @@ func ZohoCodeProcessing(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("--------------- URL to CLICK GET TOKENS -------------------------")
 		fmt.Println(url)
 		fmt.Println("--------------- URL to CLICK GET TOKENS -------------------------")
-		//req, err := http.NewRequest("GET", url, nil)
-		//if err != nil {
-		//	Log.Error(err)
-		//}
-		//
-		//resp, err := Client.Do(req)
-		//if err != nil {
-		//	Log.Error(err)
-		//}
-		//defer resp.Body.Close()
-		//
-		//body, err := ioutil.ReadAll(resp.Body)
-		//if err != nil {
-		//	Log.Error(err)
-		//}
-		//
-		//var zohoToken ZohoToken
-		//err = json.Unmarshal(body, &zohoToken)
-		//if err != nil {
-		//	Log.Println(err)
-		//}
-		//
-		//Log.Info("AccessToken : ", zohoToken.AccessToken)
-		//Log.Info("RefreshToken : ", zohoToken.RefreshToken)
-		//Log.Info("ApiDomain : ", zohoToken.ApiDomain)
-		//Log.Info("ExpiresIn : ", zohoToken.ExpiresIn)
-		//Log.Info("TokenType : ", zohoToken.TokenType)
 
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.WriteHeader(http.StatusOK)
@@ -148,9 +165,9 @@ func HandleDatabase() {
 	newLogger := logger.New(
 		log.New(os.Stdout, "\r\n", log.LstdFlags), // io writer
 		logger.Config{
-			SlowThreshold: time.Second,  // Slow SQL threshold
-			LogLevel:      logger.Error, // Log level
-			Colorful:      true,         // Disable color
+			SlowThreshold: time.Second, // Slow SQL threshold
+			LogLevel:      logger.Info, // Log level
+			Colorful:      true,        // Disable color
 		},
 	)
 
@@ -218,16 +235,93 @@ type AccessTokenResponse struct {
 	Error        string `json:"error,omitempty"`
 }
 
+func CheckForSavedTokens() (err error) {
+
+	var token DBZohoToken
+	Db.Last(&token)
+	if token.CreatedAt.After(time.Now().Add(time.Duration(token.ExpiresIn))) {
+		return fmt.Errorf("Access Token is expired")
+	}
+	return nil
+}
+
+func RefreshTokenRequest() (err error) {
+
+	var token DBZohoToken
+	Db.Last(&token)
+
+	q := url.Values{}
+	q.Set("client_id", os.Getenv("CLIENT_ID"))
+	q.Set("client_secret", os.Getenv("CLIENT_SECRET"))
+	q.Set("refresh_token", token.RefreshToken)
+	q.Set("grant_type", "refresh_token")
+
+	tokenURL := fmt.Sprintf("https://accounts.zoho.com/oauth/v2/token?%s", q.Encode())
+	req, err := http.NewRequest("POST", tokenURL, nil)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := Client.Do(req)
+	if err != nil {
+		Log.Error(err)
+		return fmt.Errorf("Failed while requesting generate token: %s ", err)
+	}
+
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Printf("Failed to close request body: %s\n", err)
+		}
+	}()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("Failed to read request body on request to https://accounts.zoho.com/oauth/v2/token: %s ", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("Got non-200 status code from request to refresh token: %s\n%s", resp.Status, string(body))
+	}
+
+	tokenResponse := AccessTokenResponse{}
+	err = json.Unmarshal(body, &tokenResponse)
+	if err != nil {
+		return fmt.Errorf("Failed to unmarshal access token response from request to refresh token: %s ", err)
+	}
+
+	//If the tokenResponse is not valid it should not update local tokens
+	if tokenResponse.Error == "invalid_code" {
+		// TODO we need to send message to telegram or gmail with instructions
+		// TODO and update code
+		return fmt.Errorf("We need to refresh Code and send it to ZOHO client https://api-console.zoho.com/client/1000.9D2L42IWZNLWRANCSACG84QEA0VU3H ")
+	}
+
+	fmt.Println("================= REFRESHED TOKEN ===========")
+	fmt.Println("Error : ", tokenResponse.Error)
+	fmt.Println("TokenType : ", tokenResponse.TokenType)
+	fmt.Println("ExpiresIn : ", tokenResponse.ExpiresIn)
+	fmt.Println("RefreshToken : ", tokenResponse.RefreshToken)
+	fmt.Println("AccessToken : ", tokenResponse.AccessToken)
+	fmt.Println("APIDomain : ", tokenResponse.APIDomain)
+	fmt.Println("=============================================")
+
+	Db.Create(&DBZohoToken{
+		Model: gorm.Model{},
+		ZohoToken: ZohoToken{
+			AccessToken:  tokenResponse.AccessToken,
+			RefreshToken: tokenResponse.RefreshToken,
+			ApiDomain:    tokenResponse.APIDomain,
+			TokenType:    tokenResponse.TokenType,
+			ExpiresIn:    tokenResponse.ExpiresIn,
+		},
+	})
+
+	return nil
+}
+
 func ZohoAuth2(code string) (err error) {
 
-	//z.oauth.clientID = clientID
-	//z.oauth.clientSecret = clientSecret
-	//z.oauth.redirectURI = redirectURI
-
-	//err = z.CheckForSavedTokens()
-	//if err == ErrTokenExpired {
-	//	return z.RefreshTokenRequest()
-	//}
+	err = CheckForSavedTokens()
+	if err != nil {
+		return RefreshTokenRequest()
+	}
 
 	q := url.Values{}
 	q.Set("client_id", os.Getenv("CLIENT_ID"))
@@ -242,17 +336,9 @@ func ZohoAuth2(code string) (err error) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resp, err := Client.Do(req)
 	if err != nil {
-		//slog.Println(screen.ScreenName, err, "Vistar ERROR when we try to Get POP link")
-		//log.Println(screen.ScreenName, err, "Vistar ERROR when we try to Get POP link")
 		Log.Error(err)
 		return fmt.Errorf("Failed while requesting generate token: %s ", err)
 	}
-
-	//resp, err := z.client.Post(tokenURL, "application/x-www-form-urlencoded", nil)
-	//if err != nil {
-	//
-	//	return fmt.Errorf("Failed while requesting generate token: %s", err)
-	//}
 
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
@@ -276,9 +362,11 @@ func ZohoAuth2(code string) (err error) {
 	}
 
 	//If the tokenResponse is not valid it should not update local tokens
-	//if tokenResponse.Error == "invalid_code" {
-	//	return ErrTokenInvalidCode
-	//}
+	if tokenResponse.Error == "invalid_code" {
+		// TODO we need to send message to telegram or gmail with instructions
+		// TODO and update code
+		return fmt.Errorf("We need to refresh Code and send it to ZOHO client https://api-console.zoho.com/client/1000.9D2L42IWZNLWRANCSACG84QEA0VU3H")
+	}
 
 	fmt.Println("================= TOKEN =====================")
 	fmt.Println("Error : ", tokenResponse.Error)
@@ -289,15 +377,16 @@ func ZohoAuth2(code string) (err error) {
 	fmt.Println("APIDomain : ", tokenResponse.APIDomain)
 	fmt.Println("=============================================")
 
-	//z.oauth.clientID = clientID
-	//z.oauth.clientSecret = clientSecret
-	//z.oauth.redirectURI = redirectURI
-	//z.oauth.token = tokenResponse
-	//
-	//err = z.SaveTokens(z.oauth.token)
-	//if err != nil {
-	//	return fmt.Errorf("Failed to save access tokens: %s", err)
-	//}
+	Db.Create(&DBZohoToken{
+		Model: gorm.Model{},
+		ZohoToken: ZohoToken{
+			AccessToken:  tokenResponse.AccessToken,
+			RefreshToken: tokenResponse.RefreshToken,
+			ApiDomain:    tokenResponse.APIDomain,
+			TokenType:    tokenResponse.TokenType,
+			ExpiresIn:    tokenResponse.ExpiresIn,
+		},
+	})
 
 	return nil
 
