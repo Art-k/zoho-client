@@ -83,6 +83,9 @@ func ZohoCodeProcessing(w http.ResponseWriter, r *http.Request) {
 			"redirect_uri=https://zoho.maxtv.tech/code&" +
 			"code=" + code
 
+		fmt.Println("--------------- URL to CLICK GET TOKENS -------------------------")
+		fmt.Println(url)
+		fmt.Println("--------------- URL to CLICK GET TOKENS -------------------------")
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
 			Log.Error(err)
@@ -178,7 +181,9 @@ func ZohoAuth() {
 	//https://accounts.zoho.com/oauth/v2/auth?client_id=1000.1KNSCLKQS192BLLGKR0BS1V452FQ5H&scope=ZohoCampaigns.campaign.ALL,Aaaserver.profile.Read,ZohoCampaigns.contact.ALL&redirect_uri=http://api.maxtvmedia.com/zoho/redirect.php&response_type=code
 
 	url := "https://accounts.zoho.com/oauth/v2/auth?response_type=code&client_id=" + os.Getenv("CLIENT_ID") + "&scope=ZohoCampaigns.contact.ALL&redirect_uri=https://zoho.maxtv.tech/code&prompt=consent"
+	fmt.Println("--------------- URL to CLICK GET CODE -------------------------")
 	fmt.Println(url)
+	fmt.Println("--------------- URL to CLICK GET CODE -------------------------")
 
 	//req, err := http.NewRequest("GET", url, nil)
 	//if err != nil {
