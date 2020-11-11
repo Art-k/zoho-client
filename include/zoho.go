@@ -60,7 +60,7 @@ func ZohoCodeProcessing(w http.ResponseWriter, r *http.Request) {
 	case "POST":
 
 		var codes []DBZohoCode
-		Db.Find(&codes)
+		Db.Order("created_at desc").Find(&codes)
 
 		addedRecordString, _ := json.Marshal(&codes)
 
