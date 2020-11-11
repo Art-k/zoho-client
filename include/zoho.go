@@ -8,7 +8,6 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -86,33 +85,33 @@ func ZohoCodeProcessing(w http.ResponseWriter, r *http.Request) {
 		fmt.Println("--------------- URL to CLICK GET TOKENS -------------------------")
 		fmt.Println(url)
 		fmt.Println("--------------- URL to CLICK GET TOKENS -------------------------")
-		req, err := http.NewRequest("GET", url, nil)
-		if err != nil {
-			Log.Error(err)
-		}
-
-		resp, err := Client.Do(req)
-		if err != nil {
-			Log.Error(err)
-		}
-		defer resp.Body.Close()
-
-		body, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			Log.Error(err)
-		}
-
-		var zohoToken ZohoToken
-		err = json.Unmarshal(body, &zohoToken)
-		if err != nil {
-			Log.Println(err)
-		}
-
-		Log.Info("AccessToken : ", zohoToken.AccessToken)
-		Log.Info("RefreshToken : ", zohoToken.RefreshToken)
-		Log.Info("ApiDomain : ", zohoToken.ApiDomain)
-		Log.Info("ExpiresIn : ", zohoToken.ExpiresIn)
-		Log.Info("TokenType : ", zohoToken.TokenType)
+		//req, err := http.NewRequest("GET", url, nil)
+		//if err != nil {
+		//	Log.Error(err)
+		//}
+		//
+		//resp, err := Client.Do(req)
+		//if err != nil {
+		//	Log.Error(err)
+		//}
+		//defer resp.Body.Close()
+		//
+		//body, err := ioutil.ReadAll(resp.Body)
+		//if err != nil {
+		//	Log.Error(err)
+		//}
+		//
+		//var zohoToken ZohoToken
+		//err = json.Unmarshal(body, &zohoToken)
+		//if err != nil {
+		//	Log.Println(err)
+		//}
+		//
+		//Log.Info("AccessToken : ", zohoToken.AccessToken)
+		//Log.Info("RefreshToken : ", zohoToken.RefreshToken)
+		//Log.Info("ApiDomain : ", zohoToken.ApiDomain)
+		//Log.Info("ExpiresIn : ", zohoToken.ExpiresIn)
+		//Log.Info("TokenType : ", zohoToken.TokenType)
 
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.WriteHeader(http.StatusOK)
