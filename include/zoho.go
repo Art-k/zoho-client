@@ -8,8 +8,10 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
+	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 )
@@ -58,9 +60,12 @@ func HandleHTTPFunction() {
 func GetZohoToken(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
-		ZohoAuth()
+
+		//ZohoAuth()
+		ZohoAuth2(r.URL.Query().Get("code"))
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.WriteHeader(http.StatusOK)
+
 	}
 }
 
@@ -201,5 +206,94 @@ func ZohoAuth() {
 	//Db.Last(&code)
 
 	// ============================================================================
+
+}
+
+type AccessTokenResponse struct {
+	AccessToken  string `json:"access_token,omitempty"`
+	RefreshToken string `json:"refresh_token,omitempty"`
+	ExpiresIn    int    `json:"expires_in,omitempty"`
+	APIDomain    string `json:"api_domain,omitempty"`
+	TokenType    string `json:"token_type,omitempty"`
+	Error        string `json:"error,omitempty"`
+}
+
+func ZohoAuth2(code string) (err error) {
+
+	//z.oauth.clientID = clientID
+	//z.oauth.clientSecret = clientSecret
+	//z.oauth.redirectURI = redirectURI
+
+	//err = z.CheckForSavedTokens()
+	//if err == ErrTokenExpired {
+	//	return z.RefreshTokenRequest()
+	//}
+
+	q := url.Values{}
+	q.Set("client_id", os.Getenv("CLIENT_ID"))
+	q.Set("client_secret", os.Getenv("CLIENT_SECRET"))
+	q.Set("code", code)
+	q.Set("redirect_uri", os.Getenv("REDIRECT_URL"))
+	q.Set("grant_type", "authorization_code")
+
+	tokenURL := fmt.Sprintf("https://accounts.zoho.com/oauth/v2/token?%s", q.Encode())
+
+	req, err := http.NewRequest("POST", tokenURL, nil)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := Client.Do(req)
+	if err != nil {
+		//slog.Println(screen.ScreenName, err, "Vistar ERROR when we try to Get POP link")
+		//log.Println(screen.ScreenName, err, "Vistar ERROR when we try to Get POP link")
+		Log.Error(err)
+		return fmt.Errorf("Failed while requesting generate token: %s ", err)
+	}
+
+	//resp, err := z.client.Post(tokenURL, "application/x-www-form-urlencoded", nil)
+	//if err != nil {
+	//
+	//	return fmt.Errorf("Failed while requesting generate token: %s", err)
+	//}
+
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Printf("Failed to close request body: %s\n", err)
+		}
+	}()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("Failed to read request body on request to https://accounts.zoho.com/oauth/v2/token?: %s", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("Got non-200 status code from request to generate token: %s\n%s", resp.Status, string(body))
+	}
+
+	tokenResponse := AccessTokenResponse{}
+	err = json.Unmarshal(body, &tokenResponse)
+	if err != nil {
+		return fmt.Errorf("Failed to unmarshal access token response from request to generate token: %s", err)
+	}
+
+	//If the tokenResponse is not valid it should not update local tokens
+	//if tokenResponse.Error == "invalid_code" {
+	//	return ErrTokenInvalidCode
+	//}
+
+	fmt.Println("================= TOKEN =====================")
+	fmt.Println(tokenResponse)
+	fmt.Println("=============================================")
+
+	//z.oauth.clientID = clientID
+	//z.oauth.clientSecret = clientSecret
+	//z.oauth.redirectURI = redirectURI
+	//z.oauth.token = tokenResponse
+	//
+	//err = z.SaveTokens(z.oauth.token)
+	//if err != nil {
+	//	return fmt.Errorf("Failed to save access tokens: %s", err)
+	//}
+
+	return nil
 
 }
