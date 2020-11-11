@@ -281,7 +281,12 @@ func ZohoAuth2(code string) (err error) {
 	//}
 
 	fmt.Println("================= TOKEN =====================")
-	fmt.Println(tokenResponse)
+	fmt.Println("Error : ", tokenResponse.Error)
+	fmt.Println("TokenType : ", tokenResponse.TokenType)
+	fmt.Println("ExpiresIn : ", tokenResponse.ExpiresIn)
+	fmt.Println("RefreshToken : ", tokenResponse.RefreshToken)
+	fmt.Println("AccessToken : ", tokenResponse.AccessToken)
+	fmt.Println("APIDomain : ", tokenResponse.APIDomain)
 	fmt.Println("=============================================")
 
 	//z.oauth.clientID = clientID
