@@ -25,6 +25,11 @@ type DBZohoCode struct {
 	Code string
 }
 
+type DBZohoToken struct {
+	gorm.Model
+	ZohoToken
+}
+
 type ZohoToken struct {
 	AccessToken  string `json:"access_token"`  //:"1000.2deaf8d0c268e3c85daa2a013a843b10.703adef2bb337b 8ca36cfc5d7b83cf24",
 	RefreshToken string `json:"refresh_token"` //:"1000.18e983526f0ca8575ea9c53b0cd5bb58.1bd83a6f2e22c3a7e1309d96ae439cc1",
@@ -117,6 +122,7 @@ func HandleDatabase() {
 
 	err := Db.AutoMigrate(
 		&DBZohoCode{},
+		&DBZohoToken{},
 	)
 
 	if err != nil {
@@ -137,12 +143,33 @@ func ZohoAuth() {
 	//https://accounts.zoho.com/oauth/v2/auth?client_id=1000.1KNSCLKQS192BLLGKR0BS1V452FQ5H&scope=ZohoCampaigns.campaign.ALL,Aaaserver.profile.Read,ZohoCampaigns.contact.ALL&redirect_uri=http://api.maxtvmedia.com/zoho/redirect.php&response_type=code
 
 	url := "https://accounts.zoho.com/oauth/v2/auth?response_type=code&client_id=" + os.Getenv("CLIENT_ID") + "&scope=ZohoCampaigns.contact.ALL&redirect_uri=https://zoho.maxtv.tech/code&prompt=consent"
+	fmt.Println(url)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		Log.Error(err)
 	}
 
 	resp, err := Client.Do(req)
+	if err != nil {
+		Log.Error(err)
+	}
+	defer resp.Body.Close()
+
+	time.Sleep(15 * time.Second)
+
+	var code DBZohoCode
+	Db.Last(&code)
+
+	// ============================================================================
+
+	url = "https://accounts.zoho.com/oauth/v2/token?" +
+		"client_id=" + os.Getenv("CLIENT_ID") + "&" +
+		"grant_type=authorization_code&" +
+		"client_secret=" + os.Getenv("CLIENT_SECRET") + "&" +
+		"redirect_uri=https://zoho.maxtv.tech/code&" +
+		"code=" + code.Code
+
+	resp, err = Client.Do(req)
 	if err != nil {
 		Log.Error(err)
 	}
