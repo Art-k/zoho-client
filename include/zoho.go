@@ -254,9 +254,10 @@ func ResponseBadRequest(w http.ResponseWriter, err error, message string) {
 }
 
 type GetTokenResponse struct {
-	CurrentToken DBZohoToken
-	Status       string
-	Messages     []string
+	CurrentToken  DBZohoToken
+	Status        string
+	Messages      []string
+	WillBeExpired time.Time
 }
 
 func GetZohoToken(w http.ResponseWriter, r *http.Request) {
@@ -283,7 +284,9 @@ func GetZohoToken(w http.ResponseWriter, r *http.Request) {
 			tokenResponse.CurrentToken = token
 			tokenResponse.Status = "token is valid"
 		}
-
+		if &token != nil {
+			tokenResponse.WillBeExpired = token.CreatedAt.Add(time.Duration(token.ExpiresIn) * time.Second)
+		}
 		response, err := json.Marshal(&tokenResponse)
 		if err != nil {
 			ResponseBadRequest(w, err, "")
@@ -448,10 +451,12 @@ func RefreshTokenRequest() (token DBZohoToken, err error) {
 
 	Db.Last(&token)
 
+	refreshToken := token.RefreshToken
+
 	q := url.Values{}
 	q.Set("client_id", os.Getenv("CLIENT_ID"))
 	q.Set("client_secret", os.Getenv("CLIENT_SECRET"))
-	q.Set("refresh_token", token.RefreshToken)
+	q.Set("refresh_token", refreshToken)
 	q.Set("grant_type", "refresh_token")
 
 	tokenURL := fmt.Sprintf("https://accounts.zoho.com/oauth/v2/token?%s", q.Encode())
@@ -504,7 +509,7 @@ func RefreshTokenRequest() (token DBZohoToken, err error) {
 		Model: gorm.Model{},
 		ZohoToken: ZohoToken{
 			AccessToken:  tokenResponse.AccessToken,
-			RefreshToken: tokenResponse.RefreshToken,
+			RefreshToken: refreshToken,
 			ApiDomain:    tokenResponse.APIDomain,
 			TokenType:    tokenResponse.TokenType,
 			ExpiresIn:    tokenResponse.ExpiresIn,
