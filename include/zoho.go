@@ -162,12 +162,12 @@ func PostContactToZoho(contact DBIncomingContact) (err error) {
 		return fmt.Errorf("Got non-200 status code from request add contact: %s\n%s", resp.Status, string(body))
 	}
 
-	addContactResponse := IncomingContactResponse{}
-	err = json.Unmarshal(body, &addContactResponse)
-	if err != nil {
-		Log.Error(err, string(body))
-		return fmt.Errorf("Failed to unmarshal add contact response from request to add contact: %s ", err)
-	}
+	//addContactResponse := IncomingContactResponse{}
+	//err = json.Unmarshal(body, &addContactResponse)
+	//if err != nil {
+	//	Log.Error(err, string(body))
+	//	return fmt.Errorf("Failed to unmarshal add contact response from request to add contact: %s ", err)
+	//}
 
 	return err
 }
