@@ -425,10 +425,20 @@ func ZohoAuth() {
 func CheckForSavedTokens() (token DBZohoToken, err error) {
 
 	Db.Last(&token)
+	fmt.Println("================= REFRESHED TOKEN ===========")
+	fmt.Println("Created At : ", token.CreatedAt)
+	fmt.Println("Expired At : ", time.Now().Add(time.Duration(token.ExpiresIn)))
+	fmt.Println("TokenType : ", token.TokenType)
+	fmt.Println("ExpiresIn : ", token.ExpiresIn)
+	fmt.Println("RefreshToken : ", token.RefreshToken)
+	fmt.Println("AccessToken : ", token.AccessToken)
+	fmt.Println("=============================================")
 	if token.CreatedAt.After(time.Now().Add(time.Duration(token.ExpiresIn))) {
-		return token, fmt.Errorf("Access Token is expired ")
+		err = fmt.Errorf("Access Token is expired ")
+		Log.Error(err)
+		return token, err
 	}
-	return token, nil
+	return token, err
 }
 
 func RefreshTokenRequest() (token DBZohoToken, err error) {
