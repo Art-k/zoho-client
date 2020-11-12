@@ -254,10 +254,11 @@ func ResponseBadRequest(w http.ResponseWriter, err error, message string) {
 }
 
 type GetTokenResponse struct {
-	CurrentToken  DBZohoToken
-	Status        string
-	Messages      []string
-	WillBeExpired time.Time
+	CurrentToken      DBZohoToken
+	Status            string
+	Messages          []string
+	WillBeExpired     time.Time
+	CurrentServerTime time.Time
 }
 
 func GetZohoToken(w http.ResponseWriter, r *http.Request) {
@@ -287,6 +288,7 @@ func GetZohoToken(w http.ResponseWriter, r *http.Request) {
 		if &token != nil {
 			tokenResponse.WillBeExpired = token.CreatedAt.Add(time.Duration(token.ExpiresIn) * time.Second)
 		}
+		tokenResponse.CurrentServerTime = time.Now().Local()
 		response, err := json.Marshal(&tokenResponse)
 		if err != nil {
 			ResponseBadRequest(w, err, "")
