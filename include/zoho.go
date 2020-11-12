@@ -130,7 +130,7 @@ func PostContactToZoho(contact DBIncomingContact) (err error) {
 	q := url.Values{}
 	q.Set("resfmt", "[JSON]")
 	q.Set("listkey", contact.ListKey)
-	q.Set("emailids", "[art.v.krg@gmail.com]")
+	q.Set("emailids", "[art.v.krg+my_new_sus@gmail.com]")
 
 	URL := fmt.Sprintf("https://campaigns.zoho.com/api/v1.1/addlistsubscribersinbulk?%s", q.Encode())
 
