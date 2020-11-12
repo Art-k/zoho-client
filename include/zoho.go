@@ -179,6 +179,9 @@ func PostContactsToZoho() (err error) {
 		errs := PostContactToZoho(contact)
 		if errs != nil {
 			err = errs
+		} else {
+			contact.Processed = true
+			Db.Save(&contact)
 		}
 	}
 	return err
@@ -194,7 +197,7 @@ func AddZohoContact(w http.ResponseWriter, r *http.Request) {
 		var incomingData IncomingContact
 		err := json.NewDecoder(r.Body).Decode(&incomingData)
 		if err != nil {
-			log.Println(err)
+			Log.Println(err)
 			ResponseBadRequest(w, err, "")
 			return
 		}
@@ -207,6 +210,7 @@ func AddZohoContact(w http.ResponseWriter, r *http.Request) {
 
 		err = PostContactsToZoho()
 		if err != nil {
+			Log.Error(err)
 			ResponseNotAddedToZoho(w, err.Error())
 			return
 		}
