@@ -95,7 +95,7 @@ func authMiddleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		} else {
 			Authorization := r.Header.Get("Authorization")
-			if Authorization == os.Getenv("AUTH") {
+			if Authorization == "Bearer "+os.Getenv("AUTH") {
 				next.ServeHTTP(w, r)
 			} else {
 				ResponseForbidden(w, "No Auth", "")
