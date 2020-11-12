@@ -138,7 +138,7 @@ func PostContactToZoho(contact DBIncomingContact) (err error) {
 	q.Set("contactinfo", "{First+Name:mac,Last+Name:Last+Name,Contact+Email:jai@zoho.com}")
 
 	URL := fmt.Sprintf("%s?%s", baseURL, q.Encode())
-
+	Log.Debug(URL)
 	req, err := http.NewRequest("POST", URL, nil)
 	if err != nil {
 		return fmt.Errorf("Failed to make a request %s '%s' ", baseURL, err)
