@@ -157,6 +157,7 @@ func PostContactToZoho(contact DBIncomingContact) (err error) {
 		return fmt.Errorf("Failed to read request body on request to https://campaigns.zoho.com/api/v1.1/addlistsubscribersinbulk?: %s ", err)
 	}
 
+	Log.Debug("Add Contact Status Code ", resp.StatusCode)
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("Got non-200 status code from request add contact: %s\n%s", resp.Status, string(body))
 	}
