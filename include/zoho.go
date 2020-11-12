@@ -20,6 +20,8 @@ var Log *logrus.Logger
 var Client *http.Client
 var Port string
 var Version string
+var Db *gorm.DB
+var Err error
 
 type DBZohoCode struct {
 	gorm.Model
@@ -39,14 +41,43 @@ type ZohoToken struct {
 	ExpiresIn    int    `json:"expires_in"`    //:3600
 }
 
+type AccessTokenResponse struct {
+	AccessToken  string `json:"access_token,omitempty"`
+	RefreshToken string `json:"refresh_token,omitempty"`
+	ExpiresIn    int    `json:"expires_in,omitempty"`
+	APIDomain    string `json:"api_domain,omitempty"`
+	TokenType    string `json:"token_type,omitempty"`
+	Error        string `json:"error,omitempty"`
+}
+
+type IncomingContactResponse struct {
+	Status   string `json:"status,omitempty"`
+	ListKey  string `json:"listkey,omitempty"`
+	Code     string `json:"code,omitempty"`
+	Url      string `json:"url,omitempty"`
+	ListName string `json:"listname,omitempty"`
+	Version  string `json:"version,omitempty"`
+}
+
+type DBIncomingContact struct {
+	gorm.Model
+	IncomingContact
+	Processed bool
+}
+
+type IncomingContact struct {
+	ListKey string
+	Email   string
+}
+
 func HandleHTTPFunction() {
 
 	r := mux.NewRouter()
-	//r.Use(authMiddleware)
+	r.Use(authMiddleware)
 	//r.Use(headerMiddleware)
 
 	//TODO this part should be finished
-	r.HandleFunc("/code", ZohoCodeProcessing)
+	//r.HandleFunc("/code", ZohoCodeProcessing)
 	r.HandleFunc("/token", GetZohoToken)
 	r.HandleFunc("/add-contact", AddZohoContact)
 	//r.HandleFunc("/get-avg-age", AvgLoopsForScreens)
@@ -58,21 +89,140 @@ func HandleHTTPFunction() {
 
 }
 
+func authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "OPTIONS" {
+			next.ServeHTTP(w, r)
+		} else {
+			Authorization := r.Header.Get("Authorization")
+			if Authorization == os.Getenv("AUTH") {
+				next.ServeHTTP(w, r)
+			} else {
+				ResponseForbidden(w, "No Auth", "")
+			}
+			//n, _ := fmt.Fprintf(w, "")
+			//fmt.Println(n)
+		}
+	})
+}
+
+func ResponseForbidden(w http.ResponseWriter, message string, frontEndAction string) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("content-type", "application/json")
+	w.WriteHeader(http.StatusForbidden)
+	n, _ := fmt.Fprintf(w, "{\"message\":\""+message+"\", \"action\":\""+frontEndAction+"\"}")
+	log.Println("Response was sent ", n, " bytes")
+	return
+}
+
+func PostContactToZoho(contact DBIncomingContact) (err error) {
+	//https://campaigns.zoho.com/api/v1.1/addlistsubscribersinbulk?listkey=listkey&resfmt=[JSON]&emailids=[email addresses]
+
+	token, err := CheckForSavedTokens()
+	if err != nil {
+		token, err = RefreshTokenRequest()
+		if err != nil {
+			//TODO Msg to Telegram bot "we cant save contact to zoho"
+			return fmt.Errorf("Not added to zoho, saved to temp storage ")
+		}
+	}
+
+	q := url.Values{}
+	q.Set("resfmt", "[JSON]")
+	q.Set("listkey", contact.ListKey)
+	q.Set("emailids", "[art.v.krg@gmail.com]")
+
+	URL := fmt.Sprintf("https://campaigns.zoho.com/api/v1.1/addlistsubscribersinbulk?%s", q.Encode())
+
+	req, err := http.NewRequest("POST", URL, nil)
+	if err != nil {
+		return fmt.Errorf("Failed to make a request https://campaigns.zoho.com/api/v1.1/addlistsubscribersinbulk '%s' ", err)
+	}
+	req.Header.Set("Authorization", token.TokenType+" "+token.AccessToken)
+
+	resp, err := Client.Do(req)
+	if err != nil {
+		Log.Error(err)
+		return fmt.Errorf("Failed while POST contact to zoho: %s ", err)
+	}
+
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			fmt.Printf("Failed to close request body: %s\n", err)
+		}
+	}()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("Failed to read request body on request to https://campaigns.zoho.com/api/v1.1/addlistsubscribersinbulk?: %s ", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("Got non-200 status code from request add contact: %s\n%s", resp.Status, string(body))
+	}
+
+	addContactResponse := IncomingContactResponse{}
+	err = json.Unmarshal(body, &addContactResponse)
+	if err != nil {
+		return fmt.Errorf("Failed to unmarshal add contact response from request to add contact: %s ", err)
+	}
+
+	return err
+}
+
+func PostContactsToZoho() (err error) {
+
+	var contacts []DBIncomingContact
+	Db.Where("processed = ?", false).Find(&contacts)
+
+	for _, contact := range contacts {
+		errs := PostContactToZoho(contact)
+		if errs != nil {
+			err = errs
+		}
+	}
+	return err
+
+}
+
 func AddZohoContact(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
+
 	case "POST":
 
-		err := CheckForSavedTokens()
+		var incomingData IncomingContact
+		err := json.NewDecoder(r.Body).Decode(&incomingData)
 		if err != nil {
-			err = RefreshTokenRequest()
-			if err != nil {
-
-			}
+			log.Println(err)
+			ResponseBadRequest(w, err, "")
+			return
 		}
+
+		var contact DBIncomingContact
+		contact.ListKey = incomingData.ListKey
+		contact.Email = incomingData.Email
+
+		Db.Create(&contact)
+
+		err = PostContactsToZoho()
+		if err != nil {
+			ResponseNotAddedToZoho(w, err.Error())
+			return
+		}
+
+		ResponseOK(w, []byte(""))
 
 	}
 
+}
+
+func ResponseNotAddedToZoho(w http.ResponseWriter, message string) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("content-type", "application/json")
+	errorString := "{\"message\":\"" + message + "\"}"
+	http.Error(w, errorString, http.StatusAccepted)
+	return
 }
 
 func ResponseOK(w http.ResponseWriter, addedRecordString []byte) {
@@ -92,13 +242,49 @@ func ResponseBadRequest(w http.ResponseWriter, err error, message string) {
 	return
 }
 
+type GetTokenResponse struct {
+	CurrentToken DBZohoToken
+	Status       string
+	Messages     []string
+}
+
 func GetZohoToken(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
 
+		tokenResponse := GetTokenResponse{}
+
+		token := DBZohoToken{}
+		Db.Last(&token)
+		token, err := CheckForSavedTokens()
+		if err != nil {
+			tokenResponse.Messages = append(tokenResponse.Messages, err.Error())
+			token, err = RefreshTokenRequest()
+			if err != nil {
+				tokenResponse.Messages = append(tokenResponse.Messages, err.Error())
+				tokenResponse.CurrentToken = token
+				tokenResponse.Status = "token is invalid"
+			} else {
+				tokenResponse.CurrentToken = token
+				tokenResponse.Status = "token refreshed"
+			}
+		} else {
+			tokenResponse.CurrentToken = token
+			tokenResponse.Status = "token is valid"
+		}
+
+		response, err := json.Marshal(&tokenResponse)
+		if err != nil {
+			ResponseBadRequest(w, err, "")
+		}
+		ResponseOK(w, response)
+
+	case "POST":
+
 		err := ZohoAuth2(r.URL.Query().Get("code"))
 		if err != nil {
 			ResponseBadRequest(w, err, "You need to Max Tv Dev Support !!!")
+			return
 		}
 
 		var token DBZohoToken
@@ -106,10 +292,11 @@ func GetZohoToken(w http.ResponseWriter, r *http.Request) {
 		response, err := json.Marshal(&token)
 		if err != nil {
 			ResponseBadRequest(w, err, "We can't read Token")
+			return
 		}
-
 		ResponseOK(w, response)
-
+	default:
+		ResponseBadRequest(w, nil, "Method is not allowed")
 	}
 }
 
@@ -157,9 +344,6 @@ func ZohoCodeProcessing(w http.ResponseWriter, r *http.Request) {
 
 }
 
-var Db *gorm.DB
-var Err error
-
 func HandleDatabase() {
 
 	newLogger := logger.New(
@@ -182,6 +366,7 @@ func HandleDatabase() {
 	err := Db.AutoMigrate(
 		&DBZohoCode{},
 		&DBZohoToken{},
+		&DBIncomingContact{},
 	)
 
 	if err != nil {
@@ -226,28 +411,17 @@ func ZohoAuth() {
 
 }
 
-type AccessTokenResponse struct {
-	AccessToken  string `json:"access_token,omitempty"`
-	RefreshToken string `json:"refresh_token,omitempty"`
-	ExpiresIn    int    `json:"expires_in,omitempty"`
-	APIDomain    string `json:"api_domain,omitempty"`
-	TokenType    string `json:"token_type,omitempty"`
-	Error        string `json:"error,omitempty"`
-}
+func CheckForSavedTokens() (token DBZohoToken, err error) {
 
-func CheckForSavedTokens() (err error) {
-
-	var token DBZohoToken
 	Db.Last(&token)
 	if token.CreatedAt.After(time.Now().Add(time.Duration(token.ExpiresIn))) {
-		return fmt.Errorf("Access Token is expired")
+		return token, fmt.Errorf("Access Token is expired ")
 	}
-	return nil
+	return token, nil
 }
 
-func RefreshTokenRequest() (err error) {
+func RefreshTokenRequest() (token DBZohoToken, err error) {
 
-	var token DBZohoToken
 	Db.Last(&token)
 
 	q := url.Values{}
@@ -262,7 +436,7 @@ func RefreshTokenRequest() (err error) {
 	resp, err := Client.Do(req)
 	if err != nil {
 		Log.Error(err)
-		return fmt.Errorf("Failed while requesting generate token: %s ", err)
+		return token, fmt.Errorf("Failed while requesting generate token: %s ", err)
 	}
 
 	defer func() {
@@ -273,24 +447,24 @@ func RefreshTokenRequest() (err error) {
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("Failed to read request body on request to https://accounts.zoho.com/oauth/v2/token: %s ", err)
+		return token, fmt.Errorf("Failed to read request body on request to https://accounts.zoho.com/oauth/v2/token: %s ", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("Got non-200 status code from request to refresh token: %s\n%s", resp.Status, string(body))
+		return token, fmt.Errorf("Got non-200 status code from request to refresh token: %s\n%s", resp.Status, string(body))
 	}
 
 	tokenResponse := AccessTokenResponse{}
 	err = json.Unmarshal(body, &tokenResponse)
 	if err != nil {
-		return fmt.Errorf("Failed to unmarshal access token response from request to refresh token: %s ", err)
+		return token, fmt.Errorf("Failed to unmarshal access token response from request to refresh token: %s ", err)
 	}
 
 	//If the tokenResponse is not valid it should not update local tokens
 	if tokenResponse.Error == "invalid_code" {
 		// TODO we need to send message to telegram or gmail with instructions
 		// TODO and update code
-		return fmt.Errorf("We need to refresh Code and send it to ZOHO client https://api-console.zoho.com/client/1000.9D2L42IWZNLWRANCSACG84QEA0VU3H ")
+		return token, fmt.Errorf("We need to refresh Code and send it to ZOHO client https://api-console.zoho.com/client/1000.9D2L42IWZNLWRANCSACG84QEA0VU3H ")
 	}
 
 	fmt.Println("================= REFRESHED TOKEN ===========")
@@ -313,14 +487,17 @@ func RefreshTokenRequest() (err error) {
 		},
 	})
 
-	return nil
+	Db.Last(&token)
+
+	return token, nil
 }
 
 func ZohoAuth2(code string) (err error) {
 
-	err = CheckForSavedTokens()
+	_, err = CheckForSavedTokens()
 	if err != nil {
-		return RefreshTokenRequest()
+		_, err = RefreshTokenRequest()
+		return err
 	}
 
 	q := url.Values{}
@@ -333,6 +510,9 @@ func ZohoAuth2(code string) (err error) {
 	tokenURL := fmt.Sprintf("https://accounts.zoho.com/oauth/v2/token?%s", q.Encode())
 
 	req, err := http.NewRequest("POST", tokenURL, nil)
+	if err != nil {
+		return fmt.Errorf("Failed to make a request https://accounts.zoho.com/oauth/v2/token '%s' ", err)
+	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resp, err := Client.Do(req)
 	if err != nil {
@@ -348,7 +528,7 @@ func ZohoAuth2(code string) (err error) {
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("Failed to read request body on request to https://accounts.zoho.com/oauth/v2/token?: %s", err)
+		return fmt.Errorf("Failed to read request body on request to https://accounts.zoho.com/oauth/v2/token?: %s ", err)
 	}
 
 	if resp.StatusCode != 200 {
@@ -358,14 +538,14 @@ func ZohoAuth2(code string) (err error) {
 	tokenResponse := AccessTokenResponse{}
 	err = json.Unmarshal(body, &tokenResponse)
 	if err != nil {
-		return fmt.Errorf("Failed to unmarshal access token response from request to generate token: %s", err)
+		return fmt.Errorf("Failed to unmarshal access token response from request to generate token: %s ", err)
 	}
 
 	//If the tokenResponse is not valid it should not update local tokens
 	if tokenResponse.Error == "invalid_code" {
 		// TODO we need to send message to telegram or gmail with instructions
-		// TODO and update code
-		return fmt.Errorf("We need to refresh Code and send it to ZOHO client https://api-console.zoho.com/client/1000.9D2L42IWZNLWRANCSACG84QEA0VU3H")
+		// TODO and update code, our scope is ZohoCampaigns.contact.ALL
+		return fmt.Errorf("We need to refresh Code and send it to ZOHO client https://api-console.zoho.com/client/1000.9D2L42IWZNLWRANCSACG84QEA0VU3H ")
 	}
 
 	fmt.Println("================= TOKEN =====================")
