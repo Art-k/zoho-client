@@ -164,6 +164,7 @@ func PostContactToZoho(contact DBIncomingContact) (err error) {
 	addContactResponse := IncomingContactResponse{}
 	err = json.Unmarshal(body, &addContactResponse)
 	if err != nil {
+		Log.Error(err, string(body))
 		return fmt.Errorf("Failed to unmarshal add contact response from request to add contact: %s ", err)
 	}
 
