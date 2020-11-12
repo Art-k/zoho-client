@@ -116,7 +116,12 @@ func ResponseForbidden(w http.ResponseWriter, message string, frontEndAction str
 }
 
 func PostContactToZoho(contact DBIncomingContact) (err error) {
-	//https://campaigns.zoho.com/api/v1.1/addlistsubscribersinbulk?listkey=listkey&resfmt=[JSON]&emailids=[email addresses]
+	//https://campaigns.zoho.com/api/v1.1/json/listsubscribe?resfmt=JSON&
+	//listkey=[listkey]&
+	//contactinfo=%7BFirst+Name%3Amac%2CLast+Name%3ALast+Name%2CContact+Email%3Ajai%40zoho.com%7D
+	//&sources=[sourceName]
+
+	baseURL := "https://campaigns.zoho.com/api/v1.1/json/listsubscribe"
 
 	token, err := CheckForSavedTokens()
 	if err != nil {
@@ -128,15 +133,15 @@ func PostContactToZoho(contact DBIncomingContact) (err error) {
 	}
 
 	q := url.Values{}
-	q.Set("resfmt", "[JSON]")
+	q.Set("resfmt", "JSON")
 	q.Set("listkey", contact.ListKey)
-	q.Set("emailids", "['art.v.krg+my_new_sus@gmail.com']")
+	q.Set("contactinfo", "{First+Name:mac,Last+Name:Last+Name,Contact+Email:jai@zoho.com}")
 
-	URL := fmt.Sprintf("https://campaigns.zoho.com/api/v1.1/addlistsubscribersinbulk?%s", q.Encode())
+	URL := fmt.Sprintf("%s?%s", baseURL, q.Encode())
 
 	req, err := http.NewRequest("POST", URL, nil)
 	if err != nil {
-		return fmt.Errorf("Failed to make a request https://campaigns.zoho.com/api/v1.1/addlistsubscribersinbulk '%s' ", err)
+		return fmt.Errorf("Failed to make a request %s '%s' ", baseURL, err)
 	}
 	req.Header.Set("Authorization", token.TokenType+" "+token.AccessToken)
 
@@ -154,7 +159,7 @@ func PostContactToZoho(contact DBIncomingContact) (err error) {
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("Failed to read request body on request to https://campaigns.zoho.com/api/v1.1/addlistsubscribersinbulk?: %s ", err)
+		return fmt.Errorf("Failed to read request body on request to %s?: %s ", baseURL, err)
 	}
 
 	Log.Debug("Add Contact Status Code ", resp.StatusCode)
